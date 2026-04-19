@@ -95,6 +95,7 @@ REPO_DIR="$SCRIPT_DIR"
 SERVER_DIR="$REPO_DIR/server"
 WEB_DIR="$REPO_DIR/web"
 MELVIN_DIR="$REPO_DIR/melvin"
+MELVAI_PM2_HOME="/home/melvai/.pm2"
 
 DOMAIN="${1:-localhost}"
 # Determine scheme — use https for real domains, http for bare IPs / localhost
@@ -129,7 +130,7 @@ else
 fi
 
 # 0b. Disk-space check — require at least 10 GB free on the filesystem holding /
-REQUIRED_KB=$(( 10 * 1024 * 1024 ))   # 10 GB in kilobytes
+REQUIRED_KB=$(( 10 * 1024 * 1024 ))   # 10 GiB in kibibytes
 AVAIL_KB=$(df --output=avail / 2>/dev/null | tail -1 | tr -d ' ')
 if [[ -n "$AVAIL_KB" && "$AVAIL_KB" -lt "$REQUIRED_KB" ]]; then
   error "Insufficient disk space. At least 10 GB free is required (available: $(( AVAIL_KB / 1024 / 1024 )) GB)."
@@ -141,11 +142,10 @@ fi
 
 # 0c. Stop and delete any existing PM2 melvai-api process
 if command -v pm2 &>/dev/null; then
-  PM2_HOME_MELVAI="/home/melvai/.pm2"
   if id melvai &>/dev/null; then
     info "Stopping existing PM2 melvai-api process (if any) …"
-    sudo -u melvai PM2_HOME="$PM2_HOME_MELVAI" pm2 delete melvai-api 2>/dev/null || true
-    sudo -u melvai PM2_HOME="$PM2_HOME_MELVAI" pm2 save --force 2>/dev/null || true
+    sudo -u melvai PM2_HOME="$MELVAI_PM2_HOME" pm2 delete melvai-api 2>/dev/null || true
+    sudo -u melvai PM2_HOME="$MELVAI_PM2_HOME" pm2 save --force 2>/dev/null || true
     success "Old PM2 melvai-api process removed."
   fi
 fi
@@ -410,7 +410,7 @@ chown -R melvai:melvai "$REPO_DIR"
 
 info "Starting Melvai API server with PM2 under 'melvai' user …"
 # PM2 environment file path for the service user
-PM2_HOME="/home/melvai/.pm2"
+PM2_HOME="$MELVAI_PM2_HOME"
 
 # Stop existing instance if any, then start fresh
 sudo -u melvai PM2_HOME="$PM2_HOME" pm2 delete melvai-api 2>/dev/null || true
