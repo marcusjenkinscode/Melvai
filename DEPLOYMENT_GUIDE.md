@@ -1,13 +1,13 @@
 # Melvai Deployment Guide
 
-This guide explains how to deploy **Melvai.com** (React + Vue frontend) and the **Melvin AI** terminal-style agent backed by local/remote **Ollama** models.
+This guide explains how to deploy **Melvai.com** (React frontend) and the **Melvin AI** terminal-style agent backed by local/remote **Ollama** models.
 
 ## 1. Architecture Overview
 
 Melvai has three deployable parts:
 
-1. **Web App (React + Vue)**
-   - React and Vue UI modules delivered from a single site build.
+1. **Web App (React)**
+   - React UI delivered from a single Vite build.
    - Includes terminal-like UI, interactive menus, flow guidance, and ASCII banner rendering.
 2. **API Layer**
    - Receives browser commands and orchestrates agent actions.

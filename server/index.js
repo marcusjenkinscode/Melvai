@@ -15,6 +15,7 @@
 
 import express from 'express'
 import cors from 'cors'
+import rateLimit from 'express-rate-limit'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -23,12 +24,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 3000
 const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, '')
 const KIMI_API_KEY = process.env.KIMI_API_KEY || ''
-const CORS_ORIGIN = process.env.CORS_ORIGIN || '*'
+
+// In production CORS_ORIGIN must be explicitly set to the site domain.
+// Defaulting to localhost for local development; never use '*' in production.
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173'
 
 const app = express()
 
 app.use(cors({ origin: CORS_ORIGIN }))
 app.use(express.json({ limit: '1mb' }))
+
+// Rate limiter for API routes: 120 requests per minute per IP
+const apiLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+})
+
+app.use('/api', apiLimiter)
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 
