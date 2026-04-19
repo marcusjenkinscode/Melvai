@@ -9,6 +9,7 @@
 #           Used for the Nginx server_name and CORS_ORIGIN.
 #
 # What this script does:
+#   0.  Audits the server for conflicts / old files and removes them.
 #   1.  Removes any conflicting Node / Ollama / Nginx installs.
 #   2.  Installs Node.js 20 LTS, npm, Ollama, Nginx, PM2, toilet, lolcat.
 #   3.  Pulls the llama3.2 base model and creates the custom Melvin model.
@@ -30,6 +31,28 @@ info()    { echo -e "${CYAN}[INFO]${NC}  $*"; }
 success() { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+
+# ── Step verification helper ───────────────────────────────────────────────────
+# step_ok DESCRIPTION CONDITION_CMD
+# Runs CONDITION_CMD; exits the script with an error if it fails.
+step_ok() {
+  local desc="$1"; shift
+  if ! "$@" &>/dev/null; then
+    error "Step verification FAILED: $desc"
+    error "Command: $*"
+    exit 1
+  fi
+  success "Verified: $desc"
+}
+
+# ── Require a command to be present and executable ─────────────────────────────
+require_cmd() {
+  local cmd="$1"
+  if ! command -v "$cmd" &>/dev/null; then
+    error "Required command not found after install: $cmd"
+    exit 1
+  fi
+}
 
 # ── .env helper: set_env KEY VALUE file ───────────────────────────────────────
 # Replaces `KEY=...` in the target file (creates entry if absent).
@@ -89,12 +112,95 @@ info " Domain  : $DOMAIN"
 info " Origin  : $ORIGIN"
 info "═══════════════════════════════════════════════════════"
 
+# ── 0. Pre-flight audit and clean ─────────────────────────────────────────────
+info "Running pre-flight audit …"
+
+# 0a. OS check — only Ubuntu is supported
+if [[ -f /etc/os-release ]]; then
+  . /etc/os-release
+  if [[ "${ID:-}" != "ubuntu" ]]; then
+    warn "This script is designed for Ubuntu. Detected: ${PRETTY_NAME:-unknown}."
+    warn "Proceeding anyway — some steps may fail on non-Ubuntu systems."
+  else
+    success "OS check: ${PRETTY_NAME}"
+  fi
+else
+  warn "Cannot detect OS (/etc/os-release missing). Proceeding cautiously."
+fi
+
+# 0b. Disk-space check — require at least 10 GB free on the filesystem holding /
+REQUIRED_KB=$(( 10 * 1024 * 1024 ))   # 10 GB in kilobytes
+AVAIL_KB=$(df --output=avail / 2>/dev/null | tail -1 | tr -d ' ')
+if [[ -n "$AVAIL_KB" && "$AVAIL_KB" -lt "$REQUIRED_KB" ]]; then
+  error "Insufficient disk space. At least 10 GB free is required (available: $(( AVAIL_KB / 1024 / 1024 )) GB)."
+  exit 1
+else
+  AVAIL_GB=$(( ${AVAIL_KB:-0} / 1024 / 1024 ))
+  success "Disk space check: ${AVAIL_GB} GB free on /."
+fi
+
+# 0c. Stop and delete any existing PM2 melvai-api process
+if command -v pm2 &>/dev/null; then
+  PM2_HOME_MELVAI="/home/melvai/.pm2"
+  if id melvai &>/dev/null; then
+    info "Stopping existing PM2 melvai-api process (if any) …"
+    sudo -u melvai PM2_HOME="$PM2_HOME_MELVAI" pm2 delete melvai-api 2>/dev/null || true
+    sudo -u melvai PM2_HOME="$PM2_HOME_MELVAI" pm2 save --force 2>/dev/null || true
+    success "Old PM2 melvai-api process removed."
+  fi
+fi
+
+# 0d. Kill any process already holding port 3000 (would conflict with the API)
+if command -v ss &>/dev/null; then
+  PORT3000_PID=$(ss -tlnp 'sport = :3000' 2>/dev/null | grep -oP '(?<=pid=)\d+' | head -1 || true)
+  if [[ -n "$PORT3000_PID" ]]; then
+    warn "Port 3000 is in use by PID $PORT3000_PID — killing it …"
+    kill "$PORT3000_PID" 2>/dev/null || true
+    sleep 1
+    success "Cleared port 3000."
+  fi
+fi
+
+# 0e. Remove old Nginx melvai site configs
+if [[ -f /etc/nginx/sites-enabled/melvai ]]; then
+  warn "Found old Nginx melvai site (enabled) — removing …"
+  rm -f /etc/nginx/sites-enabled/melvai
+fi
+if [[ -f /etc/nginx/sites-available/melvai ]]; then
+  warn "Found old Nginx melvai config — removing …"
+  rm -f /etc/nginx/sites-available/melvai
+fi
+
+# 0f. Remove stale build artifacts (old dist / node_modules)
+if [[ -d "$WEB_DIR/dist" ]]; then
+  warn "Removing stale web/dist …"
+  rm -rf "$WEB_DIR/dist"
+fi
+if [[ -d "$WEB_DIR/node_modules" ]]; then
+  warn "Removing stale web/node_modules …"
+  rm -rf "$WEB_DIR/node_modules"
+fi
+if [[ -d "$SERVER_DIR/node_modules" ]]; then
+  warn "Removing stale server/node_modules …"
+  rm -rf "$SERVER_DIR/node_modules"
+fi
+
+# 0g. Remove stale server .env (will be regenerated in step 9)
+if [[ -f "$SERVER_DIR/.env" ]]; then
+  warn "Removing stale server/.env …"
+  rm -f "$SERVER_DIR/.env"
+fi
+
+success "Pre-flight audit complete — environment is clean."
+
 # ── 1. System update ───────────────────────────────────────────────────────────
 info "Updating system packages …"
 apt-get update -qq
 apt-get upgrade -y -qq
 apt-get install -y -qq curl wget gnupg2 ca-certificates lsb-release \
   build-essential git toilet lolcat
+step_ok "curl is available" command -v curl
+step_ok "git is available"  command -v git
 success "System packages up to date."
 
 # ── 2. Clean previous Node.js installs ────────────────────────────────────────
@@ -108,8 +214,15 @@ success "Old Node.js removed."
 info "Installing Node.js 20 LTS …"
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null
 apt-get install -y -qq nodejs
+require_cmd node
+require_cmd npm
 NODE_VER=$(node --version)
 NPM_VER=$(npm --version)
+# Verify the installed version is Node 20
+if [[ "$NODE_VER" != v20* ]]; then
+  error "Expected Node.js 20.x but got $NODE_VER"
+  exit 1
+fi
 success "Node.js $NODE_VER / npm $NPM_VER installed."
 
 # ── 4. Install / reinstall Ollama ─────────────────────────────────────────────
@@ -120,49 +233,86 @@ systemctl stop ollama 2>/dev/null || true
 curl -fsSL https://ollama.com/install.sh | sh
 systemctl enable ollama
 systemctl start ollama
-success "Ollama installed and service started."
+require_cmd ollama
+# Wait up to 20 s for the Ollama HTTP API to come up before proceeding
+info "Waiting for Ollama service to become ready …"
+OLLAMA_READY=$(wait_for_http "http://127.0.0.1:11434/api/tags" 20 || echo "000")
+if [[ "$OLLAMA_READY" != "200" ]]; then
+  error "Ollama did not start correctly (HTTP $OLLAMA_READY). Check: systemctl status ollama"
+  exit 1
+fi
+success "Ollama installed and service ready."
 
 # ── 5. Install Nginx ──────────────────────────────────────────────────────────
 info "Installing Nginx …"
 apt-get install -y -qq nginx
 systemctl enable nginx
+require_cmd nginx
+step_ok "nginx binary is functional" nginx -v
 success "Nginx installed."
 
 # ── 6. Install PM2 globally ───────────────────────────────────────────────────
 info "Installing PM2 …"
 npm install -g pm2 --loglevel=error
+require_cmd pm2
 success "PM2 $(pm2 --version) installed."
 
 # ── 7. Pull base model and create Melvin ──────────────────────────────────────
 info "Pulling llama3.2 base model (this may take a while) …"
 ollama pull llama3.2
+# Verify the model was downloaded
+if ! ollama list 2>/dev/null | grep -q "llama3.2"; then
+  error "llama3.2 model pull failed — it does not appear in 'ollama list'."
+  exit 1
+fi
+success "llama3.2 base model downloaded."
 
 info "Creating custom Melvin model …"
+if [[ ! -f "$MELVIN_DIR/Modelfile" ]]; then
+  error "Modelfile not found at $MELVIN_DIR/Modelfile"
+  exit 1
+fi
 ollama create melvin -f "$MELVIN_DIR/Modelfile"
+if ! ollama list 2>/dev/null | grep -q "melvin"; then
+  error "Melvin model creation failed — it does not appear in 'ollama list'."
+  exit 1
+fi
 success "Melvin model ready."
 
 # ── 8. Build the React frontend ───────────────────────────────────────────────
 info "Installing web dependencies …"
 cd "$WEB_DIR"
 npm ci --loglevel=warn
+step_ok "web/node_modules exists" test -d "$WEB_DIR/node_modules"
 
 info "Building React frontend …"
 npm run build --if-present
+# Verify the build produced the expected output
+if [[ ! -f "$WEB_DIR/dist/index.html" ]]; then
+  error "Frontend build failed — $WEB_DIR/dist/index.html not found."
+  exit 1
+fi
 success "Frontend built → $WEB_DIR/dist"
 
 # ── 9. Configure API server environment ───────────────────────────────────────
 info "Writing server/.env …"
 cd "$SERVER_DIR"
+if [[ ! -f .env.example ]]; then
+  error ".env.example not found in $SERVER_DIR — cannot create .env"
+  exit 1
+fi
 cp .env.example .env
 set_env "NODE_ENV"         "production"           .env
 set_env "CORS_ORIGIN"      "${ORIGIN}"            .env
 set_env "PORT"             "3000"                 .env
 set_env "OLLAMA_BASE_URL"  "http://localhost:11434" .env
+step_ok "server/.env exists and has NODE_ENV" grep -q "^NODE_ENV=production" .env
 success "server/.env written."
 
 # ── 10. Install server dependencies ───────────────────────────────────────────
 info "Installing server dependencies …"
 npm ci --loglevel=warn
+step_ok "server/node_modules exists" test -d "$SERVER_DIR/node_modules"
 success "Server dependencies installed."
 
 # ── 11. Configure Nginx ───────────────────────────────────────────────────────
@@ -271,6 +421,16 @@ sudo -u melvai PM2_HOME="$PM2_HOME" pm2 start "$SERVER_DIR/index.js" \
 
 sudo -u melvai PM2_HOME="$PM2_HOME" pm2 save
 
+# Verify PM2 actually reports the process as online
+sleep 2
+PM2_STATUS=$(sudo -u melvai PM2_HOME="$PM2_HOME" pm2 jlist 2>/dev/null \
+  | grep -o '"status":"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"' || echo "unknown")
+if [[ "$PM2_STATUS" != "online" ]]; then
+  error "PM2 process melvai-api is not online (status: $PM2_STATUS)."
+  error "Check logs with: sudo -u melvai PM2_HOME=$PM2_HOME pm2 logs melvai-api"
+  exit 1
+fi
+
 # Generate and install the systemd startup unit for the melvai user
 PM2_STARTUP=$(sudo -u melvai PM2_HOME="$PM2_HOME" pm2 startup systemd -u melvai --hp /home/melvai 2>&1 | grep "sudo env" | tail -1)
 if [[ -n "$PM2_STARTUP" ]]; then
@@ -313,6 +473,38 @@ if [[ "$OLLAMA_STATUS" == "200" ]]; then
 else
   warn "Ollama not responding yet — check: systemctl status ollama"
 fi
+
+# ── Final verification summary ─────────────────────────────────────────────────
+echo ""
+echo -e "${CYAN}─── Service status ──────────────────────────────────────${NC}"
+PASS="${GREEN}PASS${NC}"; FAIL="${RED}FAIL${NC}"
+
+# Node.js
+NODE_OK=$(node --version 2>/dev/null | grep -c "^v20" || echo 0)
+echo -e "  Node.js 20       : $([ "$NODE_OK" -gt 0 ] && echo -e "$PASS" || echo -e "$FAIL")"
+
+# Ollama service
+OLLAMA_SVC=$(systemctl is-active ollama 2>/dev/null || echo "inactive")
+echo -e "  Ollama service   : $([ "$OLLAMA_SVC" = "active" ] && echo -e "$PASS ($OLLAMA_SVC)" || echo -e "$FAIL ($OLLAMA_SVC)")"
+
+# Melvin model
+MELVIN_MODEL=$(ollama list 2>/dev/null | grep -c "melvin" || echo 0)
+echo -e "  Melvin model     : $([ "$MELVIN_MODEL" -gt 0 ] && echo -e "$PASS" || echo -e "$FAIL (not found in ollama list)")"
+
+# Nginx service
+NGINX_SVC=$(systemctl is-active nginx 2>/dev/null || echo "inactive")
+echo -e "  Nginx service    : $([ "$NGINX_SVC" = "active" ] && echo -e "$PASS ($NGINX_SVC)" || echo -e "$FAIL ($NGINX_SVC)")"
+
+# Nginx config
+NGINX_CFG=$(nginx -t 2>&1 | grep -c "successful" || echo 0)
+echo -e "  Nginx config     : $([ "$NGINX_CFG" -gt 0 ] && echo -e "$PASS" || echo -e "$FAIL (run: nginx -t)")"
+
+# web/dist built
+DIST_OK=$([ -f "$WEB_DIR/dist/index.html" ] && echo 1 || echo 0)
+echo -e "  Frontend dist    : $([ "$DIST_OK" -gt 0 ] && echo -e "$PASS" || echo -e "$FAIL ($WEB_DIR/dist/index.html missing)")"
+
+# API server
+echo -e "  API /api/health  : $([ "$HTTP_STATUS" = "200" ] && echo -e "$PASS (HTTP 200)" || echo -e "$FAIL (HTTP $HTTP_STATUS)")"
 
 echo ""
 echo -e " Website  : ${CYAN}${ORIGIN}${NC}"
