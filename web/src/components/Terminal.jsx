@@ -5,6 +5,11 @@ import useCommandHistory from '../hooks/useCommandHistory'
 import { fetchModels, streamChat } from '../utils/ollamaClient'
 import { getHelpText } from '../utils/commands'
 
+// Default system prompt injected by the web client at runtime.
+// Note: Ollama models created from the melvin/Modelfile* files also embed a system
+// prompt in their weights. When both are present, the runtime message takes precedence
+// because the /api/chat messages array overrides the baked-in Modelfile SYSTEM block.
+// Users can further override this at session level with the /system command.
 const DEFAULT_SYSTEM_PROMPT =
   'You are Melvin, a knowledgeable AI assistant for Melvai.com. ' +
   'You are accessed through a terminal web interface. ' +

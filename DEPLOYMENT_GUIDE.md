@@ -108,10 +108,6 @@ services:
       PORT: 8080
       CORS_ORIGIN: https://melvai.com
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_DEFAULT_MODEL: llama3
-      OLLAMA_MODEL_ALLOWLIST: llama3,mistral
-      API_RATE_LIMIT_PER_MINUTE: 60
-      SESSION_SECRET: REPLACE_WITH_32PLUS_CHAR_CRYPTO_RANDOM_SECRET
     ports:
       - "8080:8080"
     depends_on:

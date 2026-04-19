@@ -66,8 +66,12 @@ export async function* streamChat(model, messages, signal) {
         if (data.message?.content) yield data.message.content
         if (data.done) return
       } catch (e) {
-        // Re-throw anything that isn't a JSON parse error on a partial/empty frame
+        // Re-throw anything that isn't a JSON parse error on a partial/empty frame.
+        // Partial NDJSON frames at chunk boundaries are expected; log at debug level only.
         if (!(e instanceof SyntaxError)) throw e
+        if (import.meta.env.DEV) {
+          console.debug('[ollamaClient] Skipped partial NDJSON frame:', trimmed.slice(0, 40))
+        }
       }
     }
   }
