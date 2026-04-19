@@ -1,0 +1,25 @@
+# Root-level .gitignore for Melvai
+
+# Node.js dependencies
+node_modules/
+.npm
+
+# Build output
+web/dist/
+web/.vite/
+
+# Environment files (never commit secrets)
+.env
+server/.env
+web/.env.local
+web/.env.*.local
+
+# Editor / OS cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*
