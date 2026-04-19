@@ -10,7 +10,7 @@
  *   PORT             TCP port (default: 3000)
  *   OLLAMA_BASE_URL  Ollama base URL (default: http://localhost:11434)
  *   KIMI_API_KEY     Moonshot/Kimi API key (optional)
- *   CORS_ORIGIN      Allowed CORS origin (default: *)
+ *   CORS_ORIGIN      Allowed CORS origin — REQUIRED in production
  */
 
 import express from 'express'
@@ -26,7 +26,11 @@ const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
 const KIMI_API_KEY = process.env.KIMI_API_KEY || ''
 
 // In production CORS_ORIGIN must be explicitly set to the site domain.
-// Defaulting to localhost for local development; never use '*' in production.
+// Refuse to start in production without it to prevent accidental misconfiguration.
+if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGIN) {
+  console.error('ERROR: CORS_ORIGIN must be set in production (e.g. https://melvai.com)')
+  process.exit(1)
+}
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173'
 
 const app = express()
@@ -209,9 +213,19 @@ async function streamKimi(req, res, model, messages) {
 
 // ─── Serve static frontend (production) ──────────────────────────────────────
 
+// Separate, more generous limiter for page loads (static HTML/assets).
+// This prevents the catch-all file-system handler from being abused while
+// still allowing normal browsing traffic.
+const staticLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
 const distPath = path.join(__dirname, '../web/dist')
 app.use(express.static(distPath))
-app.get('*', (_req, res) => {
+app.get('*', staticLimiter, (_req, res) => {
   res.sendFile(path.join(distPath, 'index.html'))
 })
 

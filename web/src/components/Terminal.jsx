@@ -5,7 +5,7 @@ import useCommandHistory from '../hooks/useCommandHistory'
 import { fetchModels, streamChat } from '../utils/ollamaClient'
 import { getHelpText } from '../utils/commands'
 
-const SYSTEM_PROMPT =
+const DEFAULT_SYSTEM_PROMPT =
   'You are Melvin, a knowledgeable AI assistant for Melvai.com. ' +
   'You are accessed through a terminal web interface. ' +
   'When providing code always use markdown fenced code blocks with the language name (e.g. ```python). ' +
@@ -221,8 +221,12 @@ export default function Terminal() {
       }
 
       const history = messages.filter((m) => m.role !== 'system')
+      // Use the custom system prompt if the user has set one via /system,
+      // otherwise fall back to the built-in default — single source of truth.
+      const activeSystemPrompt =
+        messages.find((m) => m.role === 'system')?.content ?? DEFAULT_SYSTEM_PROMPT
       const chatMessages = [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: activeSystemPrompt },
         ...history,
         { role: 'user', content: userMessage },
       ]

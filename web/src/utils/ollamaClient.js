@@ -66,8 +66,8 @@ export async function* streamChat(model, messages, signal) {
         if (data.message?.content) yield data.message.content
         if (data.done) return
       } catch (e) {
-        // Only re-throw real errors, not JSON parse failures on partial frames
-        if (e.message && !e.message.includes('JSON')) throw e
+        // Re-throw anything that isn't a JSON parse error on a partial/empty frame
+        if (!(e instanceof SyntaxError)) throw e
       }
     }
   }

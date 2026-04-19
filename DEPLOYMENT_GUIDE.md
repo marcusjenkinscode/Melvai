@@ -81,6 +81,8 @@ Define environment variables before build/deploy.
 ## 5. Production Deployment (Docker Compose Example)
 
 > Use this as a baseline template; adjust image names/paths to match the repo structure.
+> Replace `<org>` with your GitHub organisation (e.g. `marcusjenkinscode`) and generate
+> the session secret with: `openssl rand -base64 48`
 
 ```yaml
 version: "3.9"
