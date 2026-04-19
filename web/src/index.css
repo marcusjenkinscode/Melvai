@@ -1,0 +1,353 @@
+/* ============================================================
+   Melvai Terminal — Global Styles
+   ============================================================ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: #0d0d0d;
+  color: #c8c8c8;
+  /* JetBrains Mono from Google Fonts, with monospace fallbacks */
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace,
+    'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+/* ── Terminal shell ────────────────────────────────────────── */
+
+.terminal-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background: #0d0d0d;
+  cursor: text;
+  overflow: hidden;
+}
+
+/* ── Title bar ─────────────────────────────────────────────── */
+
+.term-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #161616;
+  border-bottom: 1px solid #252525;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-red    { background: #ff5f57; }
+.dot-yellow { background: #febc2e; }
+.dot-green  { background: #28c840; }
+
+.term-title {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  color: #555;
+  letter-spacing: 0.04em;
+}
+
+.term-status {
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+.status-online     { color: #28c840; }
+.status-offline    { color: #ff5f57; }
+.status-connecting { color: #febc2e; }
+
+/* ── Scrollable output ─────────────────────────────────────── */
+
+.term-output {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px 8px;
+  /* Allow native text selection everywhere in the output */
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Custom scrollbar */
+.term-output::-webkit-scrollbar          { width: 5px; }
+.term-output::-webkit-scrollbar-track    { background: #111; }
+.term-output::-webkit-scrollbar-thumb    { background: #2e2e2e; border-radius: 4px; }
+.term-output::-webkit-scrollbar-thumb:hover { background: #444; }
+
+/* ── Input bar ─────────────────────────────────────────────── */
+
+.term-input-bar {
+  display: flex;
+  align-items: center;
+  padding: 10px 20px;
+  background: #111;
+  border-top: 1px solid #1e1e1e;
+  flex-shrink: 0;
+}
+
+.input-prompt {
+  flex-shrink: 0;
+  white-space: nowrap;
+  user-select: none;
+}
+.prompt-model { color: #7878ff; }
+.prompt-host  { color: #4db6ff; }
+.prompt-sep   { color: #4caf50; }
+
+.term-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e0e0e0;
+  font-family: inherit;
+  font-size: inherit;
+  caret-color: #4caf50;
+  min-width: 0;
+}
+.term-input::placeholder { color: #444; font-style: italic; }
+.term-input:disabled     { color: #555; cursor: not-allowed; }
+
+/* ── Output lines ──────────────────────────────────────────── */
+
+.output-line {
+  padding: 1px 0;
+  word-break: break-word;
+}
+
+/* Echoed user command */
+.line-input .echo-prompt {
+  color: #4db6ff;
+  opacity: 0.6;
+}
+.line-input .echo-cmd { color: #e8e8e8; }
+
+/* System / info */
+.line-system {
+  color: #555;
+  font-size: 13px;
+}
+.line-system .sys-prefix { color: #3a3a3a; }
+
+/* Error */
+.line-error         { color: #ff6b6b; }
+.line-error .err-prefix { color: #ff3333; }
+
+/* Help box (preformatted box-drawing art) */
+.line-help { margin: 4px 0; }
+.help-pre {
+  color: #aaa;
+  white-space: pre;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ── Assistant (Melvin) response ───────────────────────────── */
+
+.line-assistant {
+  margin: 6px 0 10px;
+}
+
+.melvin-header {
+  display: inline-flex;
+  align-items: baseline;
+  margin-bottom: 4px;
+  user-select: none;
+}
+.melvin-label {
+  color: #7878ff;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.melvin-arrow { color: #444; }
+
+.melvin-body {
+  padding-left: 10px;
+  border-left: 2px solid #222;
+}
+
+/* Markdown elements inside Melvin's response */
+.melvin-body p        { margin: 0.4em 0; }
+.melvin-body p:first-child { margin-top: 0; }
+.melvin-body ul,
+.melvin-body ol       { padding-left: 1.6em; margin: 0.4em 0; }
+.melvin-body li       { margin: 0.2em 0; }
+.melvin-body strong   { color: #f0f0f0; }
+.melvin-body em       { color: #aaa; }
+.melvin-body a        { color: #7878ff; }
+.melvin-body h1,
+.melvin-body h2,
+.melvin-body h3       { color: #f0f0f0; margin: 0.5em 0 0.25em; font-size: 1em; }
+.melvin-body blockquote {
+  border-left: 3px solid #333;
+  padding-left: 10px;
+  color: #888;
+  margin: 6px 0;
+}
+.melvin-body table { border-collapse: collapse; margin: 6px 0; font-size: 13px; }
+.melvin-body th,
+.melvin-body td { border: 1px solid #2e2e2e; padding: 4px 10px; }
+.melvin-body th { background: #1a1a1a; color: #ccc; }
+
+/* Streaming cursor */
+.cursor-blink {
+  color: #4caf50;
+  animation: blink 0.9s step-end infinite;
+}
+
+/* Inline code */
+.inline-code {
+  background: #1c1c1c;
+  color: #e6db74;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 0.9em;
+}
+
+/* ── Code block ────────────────────────────────────────────── */
+
+.code-block-wrapper {
+  margin: 8px 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #252525;
+  background: #0f0f0f;
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  background: #181818;
+  border-bottom: 1px solid #252525;
+  user-select: none;
+}
+
+.code-lang {
+  font-size: 11px;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.copy-btn {
+  background: transparent;
+  border: 1px solid #2e2e2e;
+  color: #777;
+  cursor: pointer;
+  padding: 2px 9px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 11px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.copy-btn:hover        { border-color: #555; color: #ccc; }
+.copy-btn.copied       { border-color: #28c840; color: #28c840; }
+
+.code-block {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  /* Text in code blocks is still selectable */
+  user-select: text;
+  -webkit-user-select: text;
+}
+.code-block code { color: #d4d4d4; font-family: inherit; }
+
+/* ── ASCII Banner ─────────────────────────────────────────── */
+
+.ascii-banner {
+  margin-bottom: 12px;
+  user-select: none;
+}
+
+.ascii-art {
+  font-size: 0.68em;
+  line-height: 1.15;
+  white-space: pre;
+  letter-spacing: 0;
+  /* Lolcat rainbow gradient with continuous shift animation */
+  background: linear-gradient(
+    90deg,
+    #ff0000 0%,
+    #ff8800 16%,
+    #ffff00 33%,
+    #00ff88 50%,
+    #00aaff 66%,
+    #aa00ff 83%,
+    #ff0099 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: rainbow-shift 4s linear infinite;
+}
+
+@keyframes rainbow-shift {
+  0%   { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+
+.banner-meta {
+  font-size: 12px;
+  margin-top: 6px;
+}
+.banner-version { color: #7878ff; }
+.banner-sep     { color: #2e2e2e; }
+.banner-name    { color: #888; }
+.banner-powered { color: #444; }
+
+.banner-rule {
+  border-top: 1px solid #1e1e1e;
+  margin: 10px 0 6px;
+}
+
+/* ── Animations ───────────────────────────────────────────── */
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* ── Responsive ───────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  body { font-size: 12px; }
+  .ascii-art { font-size: 0.5em; }
+  .term-titlebar { padding: 6px 12px; }
+  .term-output   { padding: 10px 12px 4px; }
+  .term-input-bar { padding: 8px 12px; }
+}

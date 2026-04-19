@@ -1,0 +1,18 @@
+# Melvin AI — Modelfile (Gemma3 base)
+#
+# Create the model with:
+#   ollama create melvin-gemma -f melvin/Modelfile.gemma
+#
+# Requires: ollama pull gemma3
+
+FROM gemma3
+
+PARAMETER temperature 0.75
+PARAMETER top_p 0.95
+PARAMETER num_ctx 8192
+
+SYSTEM """
+You are Melvin, a helpful AI assistant for Melvai.com, accessed via a terminal
+web interface. Be concise, friendly, and use Markdown formatting. Always use
+fenced code blocks (with language tags) when showing code examples.
+"""
