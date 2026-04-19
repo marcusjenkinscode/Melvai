@@ -31,6 +31,35 @@ success() { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
+# ── .env helper: set_env KEY VALUE file ───────────────────────────────────────
+# Replaces `KEY=...` in the target file (creates entry if absent).
+set_env() {
+  local key="$1" value="$2" file="$3"
+  if grep -q "^${key}=" "$file"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+  else
+    echo "${key}=${value}" >> "$file"
+  fi
+}
+
+# ── Health-check retry loop ────────────────────────────────────────────────────
+# wait_for_http URL [max_seconds]  — polls until HTTP 200 or timeout
+wait_for_http() {
+  local url="$1" max="${2:-30}" elapsed=0
+  while (( elapsed < max )); do
+    local status
+    status=$(curl -s -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || echo "000")
+    if [[ "$status" == "200" ]]; then
+      echo "$status"
+      return 0
+    fi
+    sleep 2
+    (( elapsed += 2 ))
+  done
+  echo "000"
+  return 1
+}
+
 # ── Must be root ───────────────────────────────────────────────────────────────
 if [[ $EUID -ne 0 ]]; then
   error "Please run as root: sudo bash install.sh [DOMAIN]"
@@ -125,11 +154,10 @@ success "Frontend built → $WEB_DIR/dist"
 info "Writing server/.env …"
 cd "$SERVER_DIR"
 cp .env.example .env
-# Overwrite key values in the .env
-sed -i "s|^NODE_ENV=.*|NODE_ENV=production|" .env
-sed -i "s|^CORS_ORIGIN=.*|CORS_ORIGIN=${ORIGIN}|" .env
-sed -i "s|^PORT=.*|PORT=3000|" .env
-sed -i "s|^OLLAMA_BASE_URL=.*|OLLAMA_BASE_URL=http://localhost:11434|" .env
+set_env "NODE_ENV"         "production"           .env
+set_env "CORS_ORIGIN"      "${ORIGIN}"            .env
+set_env "PORT"             "3000"                 .env
+set_env "OLLAMA_BASE_URL"  "http://localhost:11434" .env
 success "server/.env written."
 
 # ── 10. Install server dependencies ───────────────────────────────────────────
@@ -218,32 +246,48 @@ else
   exit 1
 fi
 
-# ── 12. Start API with PM2 ────────────────────────────────────────────────────
-info "Starting Melvai API server with PM2 …"
-cd "$SERVER_DIR"
+# ── 12. Create dedicated service user and start API with PM2 ─────────────────
+info "Setting up 'melvai' service user …"
+if ! id melvai &>/dev/null; then
+  useradd --system --create-home --shell /bin/bash melvai
+  success "Created system user 'melvai'."
+else
+  success "System user 'melvai' already exists."
+fi
+
+# Give the melvai user ownership of the repo so it can read built assets
+chown -R melvai:melvai "$REPO_DIR"
+
+info "Starting Melvai API server with PM2 under 'melvai' user …"
+# PM2 environment file path for the service user
+PM2_HOME="/home/melvai/.pm2"
 
 # Stop existing instance if any, then start fresh
-pm2 delete melvai-api 2>/dev/null || true
-pm2 start index.js \
+sudo -u melvai PM2_HOME="$PM2_HOME" pm2 delete melvai-api 2>/dev/null || true
+sudo -u melvai PM2_HOME="$PM2_HOME" pm2 start "$SERVER_DIR/index.js" \
   --name melvai-api \
   --interpreter node \
-  --env production \
-  -- 2>&1
+  --cwd "$SERVER_DIR"
 
-pm2 save
-pm2 startup systemd -u root --hp /root | tail -1 | bash || true
-success "PM2 started and saved (persists on reboot)."
+sudo -u melvai PM2_HOME="$PM2_HOME" pm2 save
+
+# Generate and install the systemd startup unit for the melvai user
+PM2_STARTUP=$(sudo -u melvai PM2_HOME="$PM2_HOME" pm2 startup systemd -u melvai --hp /home/melvai 2>&1 | grep "sudo env" | tail -1)
+if [[ -n "$PM2_STARTUP" ]]; then
+  eval "$PM2_STARTUP" || true
+fi
+success "PM2 started under 'melvai' user and saved (persists on reboot)."
 
 # ── 13. Firewall (ufw) ────────────────────────────────────────────────────────
 if command -v ufw &>/dev/null; then
   info "Configuring ufw firewall …"
   ufw allow OpenSSH  >/dev/null
   ufw allow 'Nginx Full' >/dev/null
-  # Keep Ollama and Node port internal only
-  ufw deny 11434 >/dev/null 2>&1 || true
-  ufw deny 3000  >/dev/null 2>&1 || true
+  # Block external access to Ollama and Node — localhost traffic is unaffected
+  ufw deny from any to any port 11434 >/dev/null 2>&1 || true
+  ufw deny from any to any port 3000  >/dev/null 2>&1 || true
   ufw --force enable >/dev/null
-  success "ufw configured (SSH + Nginx open; Ollama/Node internal only)."
+  success "ufw configured (SSH + Nginx open; Ollama/Node external access blocked)."
 fi
 
 # ── 14. Verify ────────────────────────────────────────────────────────────────
@@ -253,16 +297,17 @@ echo -e "${GREEN} Melvai install complete!${NC}"
 echo -e "${CYAN}════════════════════════════════════════════════════════${NC}"
 echo ""
 
-# Health check — give Node a moment to initialise
-sleep 3
-HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/api/health || echo "000")
+# Health check — retry for up to 30 s while Node initialises
+info "Waiting for API server to become ready …"
+HTTP_STATUS=$(wait_for_http "http://127.0.0.1:3000/api/health" 30 || echo "000")
 if [[ "$HTTP_STATUS" == "200" ]]; then
   success "API health check: HTTP $HTTP_STATUS ✓"
 else
   warn "API health check returned HTTP $HTTP_STATUS — check: pm2 logs melvai-api"
 fi
 
-OLLAMA_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:11434/api/tags || echo "000")
+info "Waiting for Ollama to become ready …"
+OLLAMA_STATUS=$(wait_for_http "http://127.0.0.1:11434/api/tags" 30 || echo "000")
 if [[ "$OLLAMA_STATUS" == "200" ]]; then
   success "Ollama health check: HTTP $OLLAMA_STATUS ✓"
 else

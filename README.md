@@ -23,8 +23,10 @@ What `install.sh` does:
 7. Starts the API server with PM2 (auto-restarts on reboot).
 8. Restricts the firewall so Ollama and Node are internal-only.
 
-After the script finishes, the site is live at `http://yourdomain.com` and the
-Melvin AI terminal is connected and ready.  If you have a domain and want HTTPS:
+After the script finishes, the site is live at `http://yourdomain.com` (or
+`https://yourdomain.com` when using a real domain name — the script generates
+an HTTPS-ready Nginx config automatically) and the Melvin AI terminal is
+connected and ready.  If you have a domain and want HTTPS:
 
 ```bash
 sudo apt install certbot python3-certbot-nginx
